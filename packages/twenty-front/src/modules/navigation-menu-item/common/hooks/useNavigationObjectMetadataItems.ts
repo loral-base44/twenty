@@ -10,13 +10,18 @@ export const useNavigationObjectMetadataItems = () => {
     FeatureFlagKey.IS_WORKFLOW_CORE_INDEX_PAGE_ENABLED,
   );
 
-  if (!isWorkflowCoreIndexPageEnabled) {
-    return objectMetadataItems;
-  }
+  return objectMetadataItems.filter((objectMetadataItem) => {
+    if (objectMetadataItem.nameSingular === CoreObjectNameSingular.Task) {
+      return false;
+    }
 
-  return objectMetadataItems.filter(
-    (objectMetadataItem) =>
+    if (!isWorkflowCoreIndexPageEnabled) {
+      return true;
+    }
+
+    return (
       objectMetadataItem.nameSingular !==
-      CoreObjectNameSingular.WorkflowVersion,
-  );
+      CoreObjectNameSingular.WorkflowVersion
+    );
+  });
 };
