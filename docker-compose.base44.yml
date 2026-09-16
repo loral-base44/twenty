@@ -1,0 +1,88 @@
+# Base44 development stack for Twenty CRM.
+# Runs everything from the cloned source with live reload.
+#   docker compose -f docker-compose.base44.yml up -d --build
+name: twenty-base44
+
+x-node-app: &node-app
+  image: node:24-bookworm
+  working_dir: /app
+  volumes:
+    - .:/app
+    - yarn-cache:/root/.yarn/berry/cache
+  environment: &node-env
+    NODE_OPTIONS: --max-old-space-size=3072
+    PG_DATABASE_URL: postgres://postgres:postgres@db:5432/default
+    REDIS_URL: redis://redis:6379
+    NODE_ENV: development
+    SIGN_IN_PREFILLED: "true"
+    IS_WORKSPACE_CREATION_LIMITED_TO_SERVER_ADMINS: "false"
+    STORAGE_TYPE: local
+    FRONTEND_URL: https://3000-${BASE44_PUBLIC_HOST_SUFFIX}
+    SERVER_URL: https://3000-${BASE44_PUBLIC_HOST_SUFFIX}
+  env_file:
+    - /run/base44/app.env
+
+services:
+  db:
+    image: postgres:16
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: default
+    healthcheck:
+      test: pg_isready -U postgres -h localhost -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    command: ["--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: install workspace dependencies and initialize the database schema.
+  setup:
+    <<: *node-app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      bash -c "corepack enable && yarn install --inline-builds &&
+      npx nx build twenty-shared &&
+      npx nx database:init twenty-server"
+
+  server:
+    <<: *node-app
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    command: bash -c "corepack enable && npx nx start twenty-server"
+    ports:
+      - "3001:3000"
+
+  front:
+    <<: *node-app
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *node-env
+      VITE_HOST: 0.0.0.0
+      REACT_APP_SERVER_BASE_URL: http://server:3000
+      CHOKIDAR_USEPOLLING: "true"
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: .${BASE44_SANDBOX_HOST_DOMAIN}
+    command: bash -c "corepack enable && npx nx start twenty-front"
+    ports:
+      - "3000:3001"
+
+volumes:
+  db-data:
+  yarn-cache:
