@@ -249,7 +249,7 @@ const mapRecallEventToCallRecordingStatus = ({
   statusCode: string | undefined;
   statusSubCode: string | undefined;
 }): CallRecordingStatus | undefined => {
-  if (event === 'recording.done') {
+  if (event === 'recording.done' || event === 'recording.deleted') {
     return CallRecordingStatus.PROCESSING;
   }
 
@@ -302,11 +302,20 @@ const buildMediaExpiresAtUpdate = ({
   webhookEvent: RecallWebhookEvent;
   callRecording: CallRecordingRecord;
 }): { mediaExpiresAt?: string } =>
-  webhookEvent.statusCode === 'media_expired' &&
+  isRecallMediaExpiryEvent(webhookEvent) &&
   isUndefined(callRecording.mediaExpiresAt) &&
   !isUndefined(webhookEvent.statusTimestamp)
     ? { mediaExpiresAt: webhookEvent.statusTimestamp }
     : {};
+
+// Recall never sends media_expired as a bot status webhook; the Svix event for
+// retention expiry is recording.deleted. The status code is kept for parity
+// with the bot snapshot the reconciler pulls.
+const isRecallMediaExpiryEvent = ({
+  event,
+  statusCode,
+}: RecallWebhookEvent): boolean =>
+  event === 'recording.deleted' || statusCode === 'media_expired';
 
 const buildExternalRecordingIdUpdate = (
   webhookEvent: RecallWebhookEvent,
