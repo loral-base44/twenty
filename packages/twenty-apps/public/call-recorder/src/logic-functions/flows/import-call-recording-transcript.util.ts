@@ -21,6 +21,8 @@ import { type ImportCallRecordingTranscriptResult } from 'src/logic-functions/fl
 type CallRecordingTranscriptArtifactUpdateFields =
   ImportCallRecordingTranscriptResult['updateData'];
 
+const RECALL_STATUS_NOT_FOUND = 404;
+
 export const importCallRecordingTranscript = async ({
   callRecordingId,
   currentStatus,
@@ -69,6 +71,13 @@ export const importCallRecordingTranscript = async ({
       `[call-recorder] failed to list Recall transcripts for recording ${externalRecordingId}: ${listResult.errorMessage}`,
     );
 
+    if (listResult.status === RECALL_STATUS_NOT_FOUND) {
+      return buildExpiredTranscriptArtifactResult({
+        recallTranscriptId:
+          existingTranscriptMarker?.recallTranscriptId ?? null,
+      });
+    }
+
     return buildEmptyTranscriptArtifactResult({
       hasRetryableFailure:
         isNull(listResult.status) ||
@@ -112,6 +121,13 @@ export const importCallRecordingTranscript = async ({
       if (isRetryableRecallApiStatus(createResult.status)) {
         return buildEmptyTranscriptArtifactResult({
           hasRetryableFailure: true,
+        });
+      }
+
+      // The recording is gone at Recall once its media retention elapsed.
+      if (createResult.status === RECALL_STATUS_NOT_FOUND) {
+        return buildExpiredTranscriptArtifactResult({
+          recallTranscriptId: null,
         });
       }
 

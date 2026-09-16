@@ -106,6 +106,7 @@ export const syncCallRecording = async ({
         artifactScope,
         isMediaExpired,
         pendingStatus: syncStateUpdate.status,
+        now,
       })
     : undefined;
 
@@ -159,6 +160,7 @@ const importArtifactScope = async ({
   artifactScope,
   isMediaExpired,
   pendingStatus,
+  now,
 }: {
   callRecording: SyncableCallRecording;
   externalRecordingId: string | undefined;
@@ -166,6 +168,7 @@ const importArtifactScope = async ({
   artifactScope: CallRecordingArtifactImportScope;
   isMediaExpired: boolean;
   pendingStatus: string | undefined;
+  now: Date;
 }): Promise<ArtifactImportResult> => {
   if (artifactScope === 'transcript') {
     return importCallRecordingTranscript({
@@ -182,6 +185,7 @@ const importArtifactScope = async ({
     callRecording,
     externalRecordingId,
     isMediaExpired,
+    now,
   });
 
   return {
@@ -202,10 +206,12 @@ const importMediaScope = async ({
   callRecording,
   externalRecordingId,
   isMediaExpired,
+  now,
 }: {
   callRecording: SyncableCallRecording;
   externalRecordingId: string | undefined;
   isMediaExpired: boolean;
+  now: Date;
 }): Promise<{
   updateData: CallRecordingUpdateFields;
   hasRetryableFailure: boolean;
@@ -222,12 +228,26 @@ const importMediaScope = async ({
     return { updateData: {}, hasRetryableFailure: false };
   }
 
-  return importCallRecordingMedia({
+  const mediaImportResult = await importCallRecordingMedia({
     callRecordingId: callRecording.id,
     externalRecordingId,
     hasAudio: isNonEmptyArray(callRecording.audio),
     hasVideo: isNonEmptyArray(callRecording.video),
   });
+
+  // A 404 is the only expiry signal a job sees when it runs after Recall
+  // deleted the media but before the reconciler stored the expiry.
+  if (mediaImportResult.isRecordingGone === true) {
+    return {
+      updateData: {
+        mediaExpiresAt: now.toISOString(),
+        ...buildExpiredMediaImportUpdate(callRecording),
+      },
+      hasRetryableFailure: false,
+    };
+  }
+
+  return mediaImportResult;
 };
 
 const buildSyncStateFieldUpdates = ({

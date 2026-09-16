@@ -29,7 +29,11 @@ type CallRecordingMediaUpdateFields = Pick<
 type ImportCallRecordingMediaResult = {
   updateData: CallRecordingMediaUpdateFields;
   hasRetryableFailure: boolean;
+  // Recall answers 404 for a recording whose media retention has elapsed.
+  isRecordingGone?: true;
 };
+
+const RECALL_STATUS_NOT_FOUND = 404;
 
 type ImportMediaArtifactResult =
   | { outcome: 'imported'; files: CallRecordingMediaFile[] }
@@ -89,6 +93,14 @@ export const importCallRecordingMedia = async ({
     console.warn(
       `[call-recorder] failed to fetch Recall recording ${externalRecordingId} while importing media for call recording ${callRecordingId}: ${recordingResult.errorMessage}`,
     );
+
+    if (recordingResult.status === RECALL_STATUS_NOT_FOUND) {
+      return {
+        updateData: {},
+        hasRetryableFailure: false,
+        isRecordingGone: true,
+      };
+    }
 
     return { updateData: {}, hasRetryableFailure: true };
   }

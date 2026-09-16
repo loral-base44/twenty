@@ -255,6 +255,87 @@ describe('importCallRecordingArtifacts', () => {
     });
   });
 
+  it('stores the expiry and expired markers when Recall no longer knows the recording', async () => {
+    vi.useFakeTimers({ now: new Date('2026-01-08T15:00:00.000Z') });
+    importCallRecordingMediaMock.mockResolvedValue({
+      updateData: {},
+      hasRetryableFailure: false,
+      isRecordingGone: true,
+    });
+    const client = buildClient([buildProcessingCallRecording()]);
+
+    try {
+      const result = await importCallRecordingArtifacts({
+        client: client as unknown as CoreApiClient,
+        request: buildRequest(),
+        scope: 'media',
+      });
+
+      expect(client.mutations).toEqual([
+        {
+          id: 'call-recording-1',
+          data: { mediaExpiresAt: '2026-01-08T15:00:00.000Z' },
+        },
+        {
+          id: 'call-recording-1',
+          data: {
+            callRecorderFailureReason:
+              'video_import_expired,audio_import_expired',
+          },
+        },
+      ]);
+      expect(result).toEqual({
+        status: 'imported',
+        callRecordingId: 'call-recording-1',
+        scope: 'media',
+        outcome: 'call-recording-artifacts-imported',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('marks the transcript expired when Recall no longer knows the recording', async () => {
+    listRecallTranscriptsMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      errorMessage: 'Not found.',
+    });
+    const client = buildClient([
+      buildProcessingCallRecording({
+        callRecorderFailureReason: 'video_import_expired,audio_import_expired',
+      }),
+    ]);
+
+    await importCallRecordingArtifacts({
+      client: client as unknown as CoreApiClient,
+      request: buildRequest(),
+      scope: 'transcript',
+    });
+
+    expect(createAsyncRecallTranscriptMock).not.toHaveBeenCalled();
+    expect(client.mutations).toEqual([
+      {
+        id: 'call-recording-1',
+        data: {
+          transcript: {
+            recallTranscriptId: null,
+            status: 'EMPTY',
+            subCode: 'transcript_expired',
+          },
+        },
+      },
+      {
+        id: 'call-recording-1',
+        data: {
+          status: 'FAILED',
+          callRecorderFailureReason:
+            'video_import_expired,audio_import_expired',
+        },
+      },
+    ]);
+  });
+
   it('marks an expired transcript empty without requesting one and fails a recording with nothing stored', async () => {
     const client = buildClient([
       buildProcessingCallRecording({

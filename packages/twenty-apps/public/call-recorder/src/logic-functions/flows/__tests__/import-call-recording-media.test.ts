@@ -459,6 +459,25 @@ describe('importCallRecordingMedia', () => {
     );
   });
 
+  it('reports the recording gone without asking for a redelivery when Recall answers 404', async () => {
+    buildRecallRecordingResponse = () =>
+      new Response(JSON.stringify({ detail: 'Not found.' }), { status: 404 });
+
+    const mediaImportResult = await importCallRecordingMedia({
+      callRecordingId: 'call-recording-1',
+      externalRecordingId: 'recall-recording-1',
+      hasAudio: false,
+      hasVideo: false,
+    });
+
+    expect(mediaImportResult).toEqual({
+      updateData: {},
+      hasRetryableFailure: false,
+      isRecordingGone: true,
+    });
+    expect(mutationMock).not.toHaveBeenCalled();
+  });
+
   it('records an expired marker for a deleted artifact and stores the media expiry', async () => {
     buildRecallRecordingResponse = () =>
       new Response(
